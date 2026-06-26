@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Voca Note">
+  <defs>
+    <linearGradient id="vn-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#19b5a3"></stop>
+      <stop offset="1" stop-color="#0a6258"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#vn-bg)"></rect>
+  
+  <rect width="64" height="32" rx="16" fill="#ffffff" fill-opacity="0.10"></rect>
+  
+  <path d="M20 21 L31.2 43 L32.8 43 L44 21" fill="none" stroke="#ffffff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"></path>
+  
+  <rect x="24" y="49" width="16" height="3" rx="1.5" fill="#ffffff" fill-opacity="0.55"></rect>
+  <circle cx="44" cy="21" r="3.4" fill="#9bf4e7"></circle>
+</svg>
