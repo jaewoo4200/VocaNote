@@ -245,6 +245,8 @@ function App(): JSX.Element {
   const [isHelpOpen, setHelpOpen] = useState(false);
   const [wordbookFilter, setWordbookFilter] = useState<WordbookFilter>('recent');
   const [tagFilter, setTagFilter] = useState('');
+  const [wbNewTerm, setWbNewTerm] = useState('');
+  const [wbNewMeaning, setWbNewMeaning] = useState('');
   const [meaningModal, setMeaningModal] = useState<MeaningModalState | null>(null);
   const [importText, setImportText] = useState('');
   const [importMode, setImportMode] = useState<'auto' | 'csv' | 'text'>('auto');
@@ -445,6 +447,30 @@ function App(): JSX.Element {
       return next.sort((a, b) => b.updatedAt - a.updatedAt);
     });
   }, []);
+
+  const handleManualAdd = useCallback(async () => {
+    const term = wbNewTerm.trim();
+    const meaning = wbNewMeaning.trim();
+    if (!term || !meaning) return;
+    const now = Date.now();
+    const stableKey = createStableKey(term, 'word');
+    const existing = entries.find((entry) => entry.stableKey === stableKey);
+    const next: VocabEntry = existing
+      ? {
+          ...existing,
+          type: 'word',
+          term,
+          termNorm: normalizeTerm(term),
+          meaningKo: meaning,
+          deletedAt: undefined,
+          updatedAt: now
+        }
+      : { ...createEmptyEntry(term, 'word', now), meaningKo: meaning };
+    await persistEntry(next);
+    setWbNewTerm('');
+    setWbNewMeaning('');
+    setStatusMessage(`'${term}' 단어장에 추가했습니다.`);
+  }, [wbNewTerm, wbNewMeaning, entries, persistEntry]);
 
   const refreshHistory = useCallback(async () => {
     setHistory(await getHistory());
@@ -2020,6 +2046,38 @@ function App(): JSX.Element {
 
   const renderWordbookPanel = () => (
     <section className="space-y-3">
+      <div className="surface rounded-xl p-3">
+        <p className="text-xs font-medium text-[color:var(--text-muted)]">단어 직접 추가</p>
+        <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
+          <input
+            value={wbNewTerm}
+            onChange={(event) => setWbNewTerm(event.target.value)}
+            placeholder="단어 (예: resilience)"
+            className="surface rounded-lg px-3 py-2 text-sm"
+          />
+          <input
+            value={wbNewMeaning}
+            onChange={(event) => setWbNewMeaning(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void handleManualAdd();
+              }
+            }}
+            placeholder="뜻 (예: 회복력, 탄성)"
+            className="surface rounded-lg px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            disabled={!wbNewTerm.trim() || !wbNewMeaning.trim()}
+            onClick={() => void handleManualAdd()}
+            className="rounded-lg bg-[color:var(--brand)] px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            추가
+          </button>
+        </div>
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {(
           [

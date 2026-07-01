@@ -31,6 +31,12 @@ struct WordbookView: View {
     @State private var entries: [WordEntry] = Wordbook.shared.activeEntries
     @State private var filter = ""
     @State private var reviewing = false
+    @State private var showAdd = false
+    @State private var newTerm = ""
+    @State private var newMeaning = ""
+    @State private var editLockTerm = false      // 수정 모드: 단어는 고정, 뜻만
+    @FocusState private var addFocus: AddField?
+    private enum AddField { case term, meaning }
 
     private var filtered: [WordEntry] {
         let q = filter.trimmingCharacters(in: .whitespaces).lowercased()
@@ -64,14 +70,15 @@ struct WordbookView: View {
                     .background(Color.vocaBrand.opacity(0.14))
                     .foregroundColor(.vocaBrand).clipShape(Capsule())
                 Spacer()
-                Button {
-                    reviewing = true
-                } label: {
-                    Label("복습 시작", systemImage: "rectangle.stack.fill")
+                Button { startAdd() } label: { Label("추가", systemImage: "plus") }
+                Button { reviewing = true } label: {
+                    Label("복습", systemImage: "rectangle.stack.fill")
                 }
                 .disabled(entries.isEmpty)
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
+
+            if showAdd { addForm }
 
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundColor(.secondary)
@@ -85,7 +92,7 @@ struct WordbookView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "tray").font(.system(size: 34)).foregroundColor(.secondary)
                     Text("저장된 단어가 없어요").foregroundColor(.secondary)
-                    Text("검색 결과에서 + 를 눌러 저장하세요").font(.caption).foregroundColor(.secondary)
+                    Text("위 ‘추가’ 버튼 또는 검색 결과의 + 로 저장하세요").font(.caption).foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -99,6 +106,56 @@ struct WordbookView: View {
         }
     }
 
+    // 직접 단어+뜻 추가 / 기존 뜻 수정 폼
+    private var addForm: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("단어 (예: resilience)", text: $newTerm)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($addFocus, equals: .term)
+                    .disabled(editLockTerm)
+                    .frame(maxWidth: 180)
+                TextField("뜻 (예: 회복력, 탄성)", text: $newMeaning)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($addFocus, equals: .meaning)
+                    .onSubmit(saveEntry)
+            }
+            HStack {
+                if editLockTerm {
+                    Text("‘\(newTerm)’ 뜻 수정").font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                Button("취소") { cancelAdd() }
+                Button(editLockTerm ? "저장" : "추가") { saveEntry() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newTerm.trimmingCharacters(in: .whitespaces).isEmpty
+                              || newMeaning.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 10)
+        .background(Color.vocaBrand.opacity(0.06))
+    }
+
+    private func startAdd() {
+        newTerm = ""; newMeaning = ""; editLockTerm = false; showAdd = true
+        DispatchQueue.main.async { addFocus = .term }
+    }
+    private func startEdit(_ e: WordEntry) {
+        newTerm = e.term; newMeaning = e.meaningKo; editLockTerm = true; showAdd = true
+        DispatchQueue.main.async { addFocus = .meaning }
+    }
+    private func cancelAdd() {
+        showAdd = false; newTerm = ""; newMeaning = ""; editLockTerm = false
+    }
+    private func saveEntry() {
+        let t = newTerm.trimmingCharacters(in: .whitespaces)
+        let m = newMeaning.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty, !m.isEmpty else { return }
+        Wordbook.shared.upsert(term: t, meaningKo: m)   // 신규 추가/기존 수정 + 자동 동기화
+        entries = Wordbook.shared.activeEntries
+        cancelAdd()
+    }
+
     private func entryRow(_ e: WordEntry) -> some View {
         HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
@@ -109,6 +166,9 @@ struct WordbookView: View {
             Button { Speaker.shared.speak(e.term) } label: {
                 Image(systemName: "speaker.wave.2.fill").font(.system(size: 13)).foregroundColor(.secondary)
             }.buttonStyle(.plain).help("발음")
+            Button { startEdit(e) } label: {
+                Image(systemName: "square.and.pencil").font(.system(size: 13)).foregroundColor(.secondary)
+            }.buttonStyle(.plain).help("뜻 수정")
             Button {
                 Wordbook.shared.remove(termNorm: e.termNorm)
                 entries = Wordbook.shared.activeEntries
