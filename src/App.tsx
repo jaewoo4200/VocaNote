@@ -234,6 +234,8 @@ function App(): JSX.Element {
   const blurTimerRef = useRef<number | null>(null);
   const lookupCacheRef = useRef<Map<string, { text: string; viaProxy: boolean }>>(new Map());
   const lookupRequestSeqRef = useRef(0);
+  const autoSyncSkipRef = useRef(false);
+  const autoSyncTimerRef = useRef<number | null>(null);
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [entries, setEntries] = useState<VocabEntry[]>([]);
   const [history, setHistory] = useState<Awaited<ReturnType<typeof getHistory>>>([]);
@@ -1244,6 +1246,7 @@ function App(): JSX.Element {
       const merged = remote ? mergeBackup(local, remote) : local;
       await restoreBackupPayload(merged);
       await upsertSupabaseBackup(supabaseConfig, session, merged);
+      autoSyncSkipRef.current = true; // 동기화로 인한 setEntries 는 자동동기화 재트리거 방지
       setEntries(merged.entries);
       setHistory(merged.history);
       return merged;
@@ -1296,6 +1299,31 @@ function App(): JSX.Element {
     syncWithSupabase
   ]);
 
+  // 자동 동기화: 단어/기록이 바뀌면 2초 디바운스 후 업로드 (Supabase 로그인 상태에서만).
+  // syncWithSupabase 가 유발한 setEntries 는 autoSyncSkipRef 로 건너뛰어 루프 방지.
+  useEffect(() => {
+    if (settings.sync.mode !== 'supabase' || !supabaseSession) return;
+    if (autoSyncSkipRef.current) {
+      autoSyncSkipRef.current = false;
+      return;
+    }
+    if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
+    autoSyncTimerRef.current = window.setTimeout(() => {
+      void handleSyncNow();
+    }, 2000);
+    return () => {
+      if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
+    };
+  }, [entries, history, settings.sync.mode, supabaseSession, handleSyncNow]);
+
+  // 창으로 돌아오면(focus) 다른 기기 변경사항을 받아오도록 동기화.
+  useEffect(() => {
+    if (settings.sync.mode !== 'supabase' || !supabaseSession) return;
+    const onFocus = () => void handleSyncNow();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [settings.sync.mode, supabaseSession, handleSyncNow]);
+
   const handleSendSupabaseOtp = useCallback(async () => {
     if (!hasSupabaseConfig) {
       setStatusMessage('Supabase URL과 anon key를 먼저 설정해주세요.');
@@ -1314,7 +1342,7 @@ function App(): JSX.Element {
           mode: 'supabase'
         }
       }));
-      setSyncMessage('이메일로 6자리 OTP를 보냈습니다.');
+      setSyncMessage('이메일로 8자리 OTP 코드를 보냈습니다.');
     } catch (error) {
       setSyncMessage(`인증 코드 전송 실패: ${toErrorMessage(error)}`);
     } finally {
@@ -2693,7 +2721,7 @@ function App(): JSX.Element {
           <div className="mt-3 space-y-3">
             {HAS_BUNDLED_SUPABASE && !showSyncAdvanced ? (
               <p className="rounded-lg bg-[color:var(--surface-soft)] p-2.5 text-xs text-[color:var(--text-muted)]">
-                ✉️ 이메일만 입력하면 됩니다 — 받은 6자리 코드로 로그인하면 기기 간 자동 동기화돼요.
+                ✉️ 이메일만 입력하면 됩니다 — 받은 8자리 코드로 로그인하면 기기 간 자동 동기화돼요.
               </p>
             ) : null}
 
@@ -2772,7 +2800,7 @@ function App(): JSX.Element {
                   value={supabaseOtp}
                   onChange={(event) => setSupabaseOtp(event.target.value.trim())}
                   className="surface mt-1 w-full rounded-md px-2 py-1 text-sm"
-                  placeholder="6자리 코드"
+                  placeholder="8자리 코드"
                 />
               </label>
             </div>

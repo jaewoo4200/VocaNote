@@ -11,6 +11,8 @@ export default defineConfig({
   server: { port: devPort, strictPort: false },
   test: {
     environment: 'jsdom',
-    setupFiles: ['./src/testSetup.ts']
+    setupFiles: ['./src/testSetup.ts'],
+    // 테스트는 로컬 .env.local 의 번들 Supabase 설정과 무관하게 결정적으로 돌린다.
+    env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' }
   }
 });
