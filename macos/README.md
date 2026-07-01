@@ -1,7 +1,7 @@
 # VocaNote — macOS 네이티브 앱
 
-검색·사전·단어장을 **Swift로 직접 구현한** 초경량 메뉴바 검색 오버레이(Alfred/Spotlight 스타일).
-웹뷰 래퍼가 아니라 from-scratch 네이티브입니다. Xcode 없이 **CLT + `swiftc`** 로 빌드.
+검색·사전·단어장을 Swift/SwiftUI로 구현한 초경량 메뉴바 검색 오버레이(Alfred/Spotlight 스타일).
+Xcode 없이 **CLT + `swiftc`** 로 빌드. 사용자용 안내는 리포 루트 [README](../README.md) 참고.
 
 ## 빌드 & 실행
 ```bash

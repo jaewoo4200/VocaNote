@@ -16,3 +16,5 @@ macos/Sources/Version.swift
 
 # macOS 앱 생성 파일 (Supabase 설정 주입 — 커밋 금지)
 macos/Sources/SupabaseConfig.swift
+macos/build/
+macos/VocaNote-*.zip

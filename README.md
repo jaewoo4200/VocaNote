@@ -1,170 +1,139 @@
-# Voca Note
+<div align="center">
 
-영단어/약어 검색 + 단어장 + 히스토리 웹앱입니다. 기본은 로컬 IndexedDB 기반이며, 필요하면 Supabase 또는 GitHub Gist로 동기화할 수 있습니다.
+<img src="docs/icon.png" width="120" alt="VocaNote" />
 
-## 핵심 원칙
+# VocaNote · 보카노트
 
-- **정확도 우선**: 최종 정답은 사용자가 저장한 `meaningKo` 입니다.
-- 저장된 뜻이 없으면 사용자가 명시적으로 실행할 때 사전/검색 페이지의 텍스트를 조회해 앱 안에 표시합니다.
-- 데이터 기본 저장소는 **IndexedDB(브라우저 로컬)** 입니다.
-- 기기간 동기화는 선택 기능이며, 현재 **Supabase(Vercel 배포 권장)** 또는 **GitHub Gist(legacy)** 를 사용할 수 있습니다.
+**논문·원서를 읽다 만난 영단어·약어를 0초 만에 찾아 단어장에 모으는 앱**
+맥에선 ⌥Space 스포트라이트, 웹·폰에선 브라우저 — **한 계정으로 자동 동기화**.
 
-## 기능 요약
+<img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple&logoColor=white">
+<img alt="Universal" src="https://img.shields.io/badge/Universal-arm64%20%2B%20Intel-1f6feb">
+<img alt="SwiftUI" src="https://img.shields.io/badge/SwiftUI-native-fa7343?logo=swift&logoColor=white">
+<img alt="Web" src="https://img.shields.io/badge/Web-React%20%2B%20Vite-61dafb?logo=react&logoColor=white">
+<img alt="Download" src="https://img.shields.io/badge/download-2.1MB-2ea44f">
 
-- 상단 고정 검색창 + **하이브리드 자동완성 (지연 0 로컬 + 실시간 Daum 뜻)**
-  - 입력 즉시(0ms) 로컬 결과: 내 단어장/약어장(저장된 뜻) + 번들 영단어 사전(`public/wordlist.txt`, 빈도순 약 5만 단어, 인메모리 프리픽스 인덱스)
-  - 곧이어 **Daum/네이버 사전 suggest(JSONP)** 결과가 한글 뜻과 함께 병합: `resil` → `resile 원래의 형태로 돌아가다…`, `resilient 회복력 있는…`, `resilience 탄성, 복원력, 탄력` (Alfred "Daum Search"/"Naver Search" 워크플로우와 동일한 엔드포인트)
-  - 우선순위: 내 단어장 → 실시간 사전 뜻 → 오프라인 영단어 사전 (term 기준 중복 제거)
-  - 우측 상단 **사전/검색 엔진 셀렉터로 Daum ↔ 네이버 전환** (자동완성·엔터 조회에 즉시 반영)
-- 전자공학/통신 약어 데이터셋(`public/abbreviations.json`, OFDM·MIMO·LDPC·5G NR 등 약 120개) + 기존 학술 약어(AI/통계/바이오) → 검색 시 "학술 약어 추천"에 한글 뜻·도메인 태그와 함께 표시, "단어장 추가"로 즉시 저장
-- **빠른 엔터 조회**: 사전 모드 Enter 시 suggest API로 한글 뜻을 ~150ms에 즉시 표시(느린 페이지 스크랩은 사전에 없는 희귀어 폴백으로만 사용)
-- 좌측 상단 로고 클릭 시 메인(History)으로 리디렉션 + 앱 아이콘/파비콘(`public/icon.svg`)
-- 상단에서 사전/검색 엔진(Daum/Naver) 선택 가능 (텍스트 조회·외부 링크용)
-- 논문/전공서적 중심 학술 약어/단어 추천(LLM, NLP, RCT, PCA, resilience, robustness 등) + 단어장 즉시 추가
-- 우선순위: 단어장(뜻 있음) > 약어장(도메인/기본의미 정렬) > 미정의 액션
-- Enter 동작
-  - 정의 존재: 상세 패널 열기
-  - 정의 없음: 기본 사전 텍스트 조회 실행
-- 뜻 저장 모달(`meaningKo` 필수, `notes/tags/favorite`)
-- History는 **Enter/텍스트조회 실행 시점**에 기록(`lastSeenAt`, `seenCount`)
-- 오타/미검색 시 주요 뜻 추출 실패를 감지해 “검색 결과가 없습니다” 안내 표시
-- Wordbook 필터(최근/자주/즐겨찾기/태그/미정의)
-- Abbrev 다의성 + 도메인 기반 정렬 + 기본 의미 고정
-- Import/Export
-  - CSV 파일/텍스트 붙여넣기 import
-  - 미정의 항목 Review Queue 일괄 처리
-  - Wordbook/Abbrev CSV export
-  - 전체 JSON 백업/복원
-- 단축키
-  - `/`, `Esc`, `?`
-  - `g h`, `g w`, `g a`, `g r`, `g s`
-  - 입력 포커스 중 단축키 비활성화
-- 테마: Light / Dark / System
-- HashRouter 기반 라우팅
-- 옵션 동기화
-  - Supabase email OTP 로그인 + vault Pull/Push
-  - GitHub Gist Pull/Push + LWW 병합 + tombstone 삭제 처리
+[**⬇︎ 맥 앱 다운로드**](https://github.com/jaewoo4200/VocaNote/releases/latest) ·
+[**🌐 웹앱 열기**](https://voca.ljw.app) ·
+[사용법](#-사용법) · [빌드](#-빌드-개발자)
 
-## 기술 스택
+</div>
 
-- Vite + React + TypeScript
-- React Router(HashRouter)
-- IndexedDB: `idb`
-- CSV: `papaparse`
-- 테스트: Vitest
-- 배포: Vercel 또는 GitHub Actions + GitHub Pages
+---
 
-## 로컬 실행
+## ✨ VocaNote란?
 
+전자·통신 전공(EE/comm) 대학원생이 **영어 논문을 빠르게 읽기 위해** 만든 도구예요.
+
+- **딜레이 0 검색** — `ap`만 쳐도 `ap…` 단어가 즉시. 번들된 빈도순 영단어(5만) 로컬 인덱스라 네트워크를 안 기다립니다.
+- **한글 뜻 바로** — 이어서 **다음/네이버 사전**의 한글 뜻이 붙어요. (`resil` → resile 원래 형태로 돌아가다 · resilient 회복력 있는 · resilience 탄성/복원력)
+- **전자·통신 약어 + ktword 용어집** — OFDM·MIMO·LDPC·5G NR … 한글뜻·도메인·원문 링크까지.
+- **내 단어장** — ↵ 한 번이면 저장. **플래시카드 복습**도.
+- **어디서나 동기화** — 맥에서 저장한 단어가 폰·웹 복습 큐에 그대로.
+
+---
+
+## 🖥️ 맥 앱
+
+Alfred/Spotlight 스타일의 **메뉴바 전용 검색 오버레이**. 웹뷰 래퍼가 아니라 SwiftUI로 만든 네이티브 앱이라 가볍고(≈2MB) 빠릅니다.
+
+### 🚀 설치
+
+1. [**Releases**](https://github.com/jaewoo4200/VocaNote/releases/latest) 에서 `VocaNote-x.y.z.zip` 다운로드 → 압축 해제
+2. `VocaNote.app` 을 **응용 프로그램** 폴더로 이동(선택)
+3. **첫 실행** — 앱이 공증(notarize)되지 않아서 macOS가 막아요. 둘 중 하나:
+   - `VocaNote.app` **우클릭 → 열기 → 열기** (한 번만 하면 이후엔 그냥 실행)
+   - 또는 터미널에서 격리 속성 제거:
+     ```bash
+     xattr -dr com.apple.quarantine /Applications/VocaNote.app
+     ```
+4. 실행하면 **Dock이 아니라 메뉴바(오른쪽 위)** 에 📖 아이콘이 떠요. **⌥Space** 로 검색창 호출!
+
+> 요구사항: **macOS 14(Sonoma)+**, Apple Silicon·Intel 모두 지원(유니버설).
+
+### ⌨️ 사용법
+
+| 단축키 | 동작 |
+|---|---|
+| **⌥ Space** | 어디서나 검색창 열기/닫기 |
+| 타이핑 | 로컬 즉시 자동완성 + 다음/네이버 한글 뜻 |
+| **↑ / ↓** | 결과 하이라이트 이동 |
+| **↵ Enter** | 선택 단어를 단어장에 저장 |
+| **esc** | 닫기 |
+| **⌃⌥ Space** | 다른 앱(PDF·브라우저)에서 **드래그한 단어를 바로 조회** |
+| **⌘L** | 내 단어장 (목록·삭제·플래시카드 복습) |
+| **⌘,** | 설정 (단축키 변경·로그인·자동실행) |
+
+- 검색창 상단 아이콘으로 **단어장/설정/사용법** 바로 이동 · 📌 로 **창 고정**
+- 결과 행에서 🔊 **발음** · 📄 **복사** · ➕ **저장**
+- 첫 실행 시 **사용법 튜토리얼** (설정 → "사용법 다시 보기"로 재실행)
+
+---
+
+## 🌐 웹앱
+
+브라우저·모바일에선 **[voca.ljw.app](https://voca.ljw.app)** — 설치 없이 바로. 기본은 브라우저 로컬(IndexedDB) 저장, 로그인하면 동기화.
+
+---
+
+## 🔄 동기화 (맥 ↔ 웹 ↔ 폰)
+
+같은 이메일로 로그인하면 단어장이 자동으로 한 곳에 모여요.
+
+1. 맥: **설정(⌘,) → 동기화** · 웹: **Settings → Sync**
+2. 이메일 입력 → **코드 받기** → 메일로 온 **8자리 코드** 입력 → 확인
+3. 이후 저장/삭제 시 자동 업로드, 열 때/포커스 시 자동 다운로드
+
+> 이메일 OTP(비밀번호 없음) 기반. 토큰은 맥에선 **키체인**, 웹에선 세션 저장소에 보관돼요. 데이터는 Supabase RLS로 사용자별 격리됩니다.
+
+---
+
+## 🔧 빌드 (개발자)
+
+### 웹
 ```bash
 npm install
-npm run dev
+npm run dev       # 개발 서버
+npm run test      # 테스트(71 케이스)
+npm run build     # 프로덕션 빌드
 ```
 
-Supabase를 사용할 경우 `.env.example`을 참고해 `.env.local`에 아래 값을 넣을 수 있습니다.
-
+### 맥 앱 (Xcode 불필요 — CLT + swiftc)
 ```bash
-VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+cd macos
+./build.sh        # VocaNote.app 빌드 후 실행 (개발용, arm64)
+./release.sh      # 유니버설(.app + .zip) 배포 빌드
 ```
 
-## 테스트
-
+동기화를 쓰려면 리포 루트 `.env.local` 에 Supabase 값을 넣으면 빌드가 자동 주입합니다(커밋 안 됨):
 ```bash
-npm run test
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-key>
 ```
+> anon key는 클라이언트 노출용 **공개 키**로 바이너리 임베드는 안전합니다(데이터는 RLS 보호). service_role 키는 절대 넣지 마세요.
 
-현재 테스트는 `normalize`, `CSV import/export`, `merge/tombstone(삭제 부활 방지)/history prune`, `shortcut sequence`, `자동완성 병합 빌더`, `wordlist 프리픽스 인덱스`, `Daum/네이버 suggest 파서`, `약어/ktword 데이터셋 파서`, `LLM JSON 임포트 파서`, `백업 검증`을 포함해 71개 케이스를 다룹니다.
+---
 
-## GitHub Pages 배포
+## 🛠️ 기술 스택
 
-1. 저장소 `Settings > Pages`에서 Source를 `GitHub Actions`로 설정합니다.
-2. `main` 브랜치로 push 하면 `.github/workflows/deploy.yml`이 빌드/배포합니다.
-3. 워크플로우는 자동으로 `VITE_BASE_PATH=/<repo-name>/`를 주입해 정적 경로를 맞춥니다.
+- **맥**: Swift · SwiftUI + AppKit(NSPanel 오버레이) · Carbon 전역 단축키 · Keychain · URLSession · `swiftc`(Xcode 없이)
+- **웹**: Vite + React + TypeScript · IndexedDB(`idb`) · PapaParse · Vitest
+- **동기화/배포**: Supabase(이메일 OTP·`sync_vaults`·RLS) · Vercel
 
-## Supabase Sync 설정 방법
+---
 
-### (권장) 공용 프로젝트 1개 = 일반 사용자는 "이메일 로그인"만
-배포 소유자가 Supabase 프로젝트 1개를 빌드에 넣어두면, **사용자는 URL/anon key를 몰라도 됩니다.**
+## ⚠️ 알려진 한계
 
-1. Supabase 프로젝트 생성 → SQL Editor에서 `supabase/schema.sql` 실행 → Authentication에서 Email OTP 활성화
-2. `Project Settings > API`의 URL과 anon key를 **빌드 환경변수**로 등록:
-   - 로컬: `.env.local`에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (`.env.example` 참고)
-   - Vercel: Project Settings → Environment Variables 에 동일 등록 후 재배포
-3. 그러면 앱 `Settings > Sync`에서 **URL/anon key 입력칸은 숨겨지고**, 사용자는 `로그인 이메일` → `인증 코드 보내기` → 받은 6자리 코드 입력만 하면 로그인·동기화됩니다.
+| 항목 | 내용 |
+|---|---|
+| 공증 | Developer ID 미공증 → 첫 실행 시 우클릭 열기(위 설치 3번) 필요 |
+| 라이브 뜻 | 입력한 단어가 다음/네이버로 전송됨(로컬 결과는 오프라인) |
+| 공용 백엔드 | 동기화는 소유자의 Supabase 프로젝트를 공유(사용자별 RLS 격리) |
 
-> anon key는 클라이언트 노출용 공개 키이며 데이터는 RLS로 보호됩니다(빌드에 넣어도 안전).
+---
 
-### (개발/자체호스트) 직접 연결
-환경변수를 안 넣었거나 `Settings > Sync`의 **"고급 (직접 Supabase 연결)"** 을 열면 `Project URL`·`anon key`를 직접 입력할 수 있습니다. 이후 `인증 코드 보내기` → OTP → `OTP 확인 후 연결` → `Sync now`.
+## 🙏 크레딧 / 라이선스
 
-### Supabase 동작 방식
-
-- 브라우저는 로컬 IndexedDB를 먼저 사용합니다.
-- Sync 시에만 Supabase `sync_vaults` 테이블의 JSON payload와 병합합니다.
-- 충돌은 기존과 동일하게 `updatedAt` 기준 LWW 입니다.
-
-## Gist Sync 설정 방법(BYOT, legacy)
-
-1. GitHub에서 Personal Access Token 생성
-- 권한: `gist` 읽기/쓰기
-2. 앱 `Settings > Sync`
-- `GitHub Gist Sync ON` 선택
-- Token 입력
-- `Create new private gist` 또는 `Connect existing gist`
-- 필요 시 `이 기기 기억하기` 체크(로컬 저장)
-3. `Sync now`로 Pull+Merge+Push 수행
-
-### 병합 정책
-
-- 키: `stableKey(term+type)`
-- 충돌: `updatedAt` 기준 LWW(last-write-wins)
-- 삭제: `deletedAt` tombstone 유지
-- history: 최신 순으로 상한(2000) 유지
-
-## 보안/개인정보
-
-- 자동완성은 먼저 로컬(번들 사전 + 내 단어장)로 즉시 표시되고, 실시간 한글 뜻을 위해 **Daum/네이버 사전 suggest를 JSONP로 호출**합니다. 이 엔드포인트들은 CORS를 주지 않지만 `callback` 파라미터(JSONP)를 지원하므로 정적 호스팅에서도 동작합니다. JSONP는 해당 호스트의 스크립트를 실행하므로, CSP `script-src`는 `suggest.dic.daum.net`/`vsuggest.search.daum.net`/`ac-dict.naver.com`/`ac.search.naver.com` 네 호스트로만 한정했습니다(그 외에는 `'self'`, `object-src 'none'`). 입력한 검색어가 Daum/네이버로 전송되는 점에 유의하세요.
-- GitHub API 호출은 `https://api.github.com`를 사용합니다.
-- 텍스트 조회 시 직접 접근이 막히면 `https://r.jina.ai` 프록시를 사용할 수 있습니다. 이때 조회한 단어/페이지 내용이 제3자(jina)를 경유하므로, 명시적 “텍스트 조회” 동작에서만 호출됩니다.
-- 토큰은 기본 `sessionStorage`, 선택 시 `localStorage`에 저장됩니다.
-- 토큰/민감정보를 로그로 출력하지 않습니다.
-- 앱 데이터는 브라우저 로컬 IndexedDB + 사용자가 지정한 Supabase 또는 GitHub Gist에 저장됩니다.
-
-## 처음 사용자 가이드 / LLM 임포트 / ktword 용어해설
-
-- **온보딩 코치마크 투어**: 첫 방문 시 화면을 어둡게 하고 실제 메뉴 위치(검색창·엔진 셀렉터·패널 네비·설정 등)를 하나씩 **스포트라이트로 하이라이트**하며 다음으로 이동. 작은 화면에서 안 보이는 대상은 자동 건너뜀. `Settings > 가이드 다시 보기`로 재실행.
-- **LLM로 논문 단어 가져오기** (`Settings`): ① 제공되는 프롬프트를 복사해 ChatGPT·Claude에 논문/문단과 함께 붙여넣기 → ② 나온 JSON을 그대로 붙여넣고 "가져오기" → 뜻까지 자동 저장 후 Review 큐로 이동. 코드펜스(```)·앞뒤 잡설이 섞여도 JSON 배열만 뽑아 파싱.
-- **ktword 용어해설**: [ktword.co.kr](http://www.ktword.co.kr/)의 정보통신/전자/물리/수학 용어를 `public/ktword.json`으로 번들(약 190개, 영문 표제어+한글뜻+원문 URL). 검색 시 "학술 약어 추천"에 뜨고 **"ktword 원문 ↗"** 링크로 상세 해설로 이동, "단어장 추가" 시 출처를 notes에 기록.
-  - 수집: `node scripts/build-ktword.mjs "2,3,…,22" 1` (카테고리 목록의 링크 title에서 추출, r.jina.ai 경유, 요청 간 지연). 페이지 수를 늘리면 커버리지 확장.
-  - 라이선스: ktword 고지 — "본 웹사이트 내 모든 저작물은 원출처를 밝히는 한 자유롭게 사용(상업화포함) 가능합니다". 모든 항목에 원문 URL을 남겨 출처를 표기합니다.
-
-## 약어 데이터셋 업데이트 (전자/통신 등)
-
-전자공학·통신 약어는 코드가 아니라 데이터 파일로 분리되어 있어 쉽게 추가/수정할 수 있습니다.
-
-- 파일: `public/abbreviations.json`
-- 형식: `[{ "abbr": "OFDM", "full": "Orthogonal Frequency Division Multiplexing", "ko": "직교 주파수 분할 다중화", "domains": ["comm", "wireless"] }, ...]`
-- 항목을 추가/수정한 뒤 `main`에 push하면 GitHub Actions가 자동 배포하여 반영됩니다(앱은 시작 시 이 파일을 로드).
-- 빌드 없이 "주기적 업데이트"가 필요하면, 이 JSON을 별도 URL(예: 깃 raw/Gist)에서 가져오도록 `loadAbbrevSeeds(url)` 호출 주소만 바꾸면 됩니다.
-- 데이터셋 로드에 실패해도 코드에 내장된 기본 학술 약어(AI/통계/바이오)는 항상 동작합니다.
-
-## Import CSV 컬럼
-
-지원 컬럼(헤더 자동 감지):
-
-- `term`
-- `meaningKo`
-- `type` (`word` | `abbr`)
-- `fullExpansion`
-- `domains`
-- `tags`
-- `notes`
-- `favorite`
-
-`plain text`는 줄바꿈 term 리스트로 처리하고 중복 제거합니다.
-
-## 단축키 정책
-
-- 기본값에서 `Cmd/Ctrl/Alt` 조합은 사용하지 않습니다.
-- 브라우저/OS 기본 단축키 충돌을 피하기 위해 시퀀스 입력 방식을 사용합니다.
+- 만든이 **Jaewoo Lee** · 사전 뜻 출처 [다음](https://dic.daum.net)/[네이버](https://dict.naver.com) · 용어집 [ktword](http://www.ktword.co.kr)(원출처 표기 조건 자유 이용)
+- README 구성은 [ClaudeUsage](https://github.com/jaewoo4200/ClaudeUsage) 를 참고했어요.
+- 개인 학습용 프로젝트입니다.

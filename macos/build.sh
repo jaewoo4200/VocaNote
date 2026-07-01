@@ -44,7 +44,7 @@ cp Resources/ktword.json "$APP/Contents/Resources/"
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # 모든 Swift 소스 컴파일
-swiftc -swift-version 5 -O \
+swiftc -swift-version 5 -O -target arm64-apple-macos14.0 \
   -o "$APP/Contents/MacOS/VocaNote" \
   Sources/*.swift \
   -framework Cocoa -framework SwiftUI -framework Carbon -framework ServiceManagement -framework AVFoundation -framework ApplicationServices -framework Security
