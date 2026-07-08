@@ -32,7 +32,26 @@ struct KeyCap: View {
             .font(.system(size: 10, weight: .semibold, design: .rounded))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Color.primary.opacity(0.08))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.primary.opacity(0.09)))
             .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+/// 아이콘 버튼 공용 스타일 — 호버 배경 + 누름 스케일 (웹 .icon-btn 과 동일한 감각)
+struct HoverIconStyle: ButtonStyle {
+    @State private var hovering = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
+            )
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .onHover { hovering = $0 }
+            .contentShape(Rectangle())
     }
 }
 
@@ -54,9 +73,26 @@ struct SearchView: View {
                 TutorialOverlay(onClose: dismissTutorial)
                     .transition(.opacity)
             }
+            // 저장 토스트 — 하단에서 스프링 등장
+            if let saved = vm.justSavedTerm {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 7) {
+                        Image(systemName: "checkmark.circle.fill").foregroundColor(.white)
+                        Text("'\(saved)' 단어장에 저장됨")
+                            .font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Capsule().fill(Color.vocaBrand).shadow(color: .black.opacity(0.25), radius: 10, y: 4))
+                    .padding(.bottom, 44)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .allowsHitTesting(false)
+            }
         }
+        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: vm.justSavedTerm)
         .frame(minWidth: 560, minHeight: 380)
-        .background(.ultraThinMaterial)
+        .vocaSurfaceBackground()
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(VocaTheme.border, lineWidth: 1))
         // 검색 트리거는 SearchViewModel.init()의 $query/$engine Combine 구독이 담당.
@@ -80,8 +116,8 @@ struct SearchView: View {
                 .foregroundColor(.vocaBrand).font(.system(size: 12))
             Text("VocaNote").font(.system(size: 12.5, weight: .semibold)).foregroundColor(VocaTheme.text)
             Spacer()
-            navIcon("books.vertical.fill", "단어장 (⌘L)") { WordbookWindow.shared.show() }
-            navIcon("gearshape.fill", "설정 (⌘,)") { SettingsWindow.shared.show() }
+            navIcon("books.vertical.fill", "단어장 (⌘L)") { WordbookWindow.shared.show(returnToPanel: true) }
+            navIcon("gearshape.fill", "설정 (⌘,)") { SettingsWindow.shared.show(returnToPanel: true) }
             navIcon("questionmark.circle", "사용법") { withAnimation { showTutorial = true } }
         }
         .padding(.horizontal, 15).padding(.top, 11).padding(.bottom, 1)
@@ -91,7 +127,7 @@ struct SearchView: View {
         Button(action: action) {
             Image(systemName: icon).font(.system(size: 12.5)).foregroundColor(VocaTheme.textMuted)
         }
-        .buttonStyle(.plain).help(help)
+        .buttonStyle(HoverIconStyle()).help(help)
     }
 
     private var searchBar: some View {
@@ -134,6 +170,8 @@ struct SearchView: View {
                         row(s, selected: idx == vm.selectedIndex)
                             .id(idx)
                             .onTapGesture { vm.selectedIndex = idx }
+                            .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 3)),
+                                                    removal: .opacity))
                     }
                     if vm.results.isEmpty && !vm.query.isEmpty {
                         Text(vm.liveLoading ? "검색 중…" : "일치하는 결과가 없어요")
@@ -143,6 +181,8 @@ struct SearchView: View {
                     }
                 }
                 .padding(6)
+                // 라이브 뜻이 병합될 때 행이 순간이동하지 않고 부드럽게 정착
+                .animation(.easeOut(duration: 0.15), value: vm.results.map(\.id))
             }
             // anchor:nil → 최소 스크롤: 하이라이트가 화면 안에 있으면 스크롤하지 않고,
             // 선택이 뷰포트 밖으로 나갈 때만 딱 보일 만큼만 스크롤 (한 줄씩 이동 느낌)
@@ -171,32 +211,45 @@ struct SearchView: View {
                 }
             }
             Spacer(minLength: 8)
-            HStack(spacing: 12) {
+            HStack(spacing: 6) {
                 if isEnglish(s.term) {
                     Button { Speaker.shared.speak(s.term) } label: {
                         Image(systemName: "speaker.wave.2.fill").font(.system(size: 13))
                             .foregroundColor(.secondary)
-                    }.buttonStyle(.plain).help("발음 듣기")
+                    }.buttonStyle(HoverIconStyle()).help("발음 듣기")
                 }
                 Button { copyRow(s) } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 13))
                         .foregroundColor(.secondary)
-                }.buttonStyle(.plain).help("복사")
-                if let m = s.meaningKo, !m.isEmpty, s.source != .wordbook {
+                }.buttonStyle(HoverIconStyle()).help("복사")
+                if s.source == .wordbook || vm.justSavedTerm == s.term {
+                    // 방금 저장됨 → 체크로 모프 (스프링 팝)
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 17))
+                        .foregroundColor(.vocaBrand)
+                        .scaleEffect(vm.justSavedTerm == s.term ? 1.15 : 1)
+                        .animation(.spring(response: 0.25, dampingFraction: 0.55), value: vm.justSavedTerm)
+                        .padding(4)
+                } else if let m = s.meaningKo, !m.isEmpty {
                     Button { vm.save(s) } label: {
                         Image(systemName: "plus.circle.fill").font(.system(size: 17))
                             .foregroundColor(.vocaBrand)
-                    }.buttonStyle(.plain).help("단어장에 저장")
-                } else if s.source == .wordbook {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 15))
-                        .foregroundColor(.vocaBrand.opacity(0.7))
+                    }.buttonStyle(HoverIconStyle()).help("단어장에 저장 (↵)")
                 }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(selected ? Color.vocaBrand.opacity(0.14) : Color.clear)
+            // 선택 행: 채움 + 왼쪽 브랜드 액센트 바 (ultraThinMaterial 위에서도 또렷하게)
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(selected ? Color.vocaBrand.opacity(0.13) : Color.clear)
+                if selected {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.vocaBrand)
+                        .frame(width: 3)
+                        .padding(.vertical, 5)
+                }
+            }
         )
     }
 
@@ -221,8 +274,11 @@ struct SearchView: View {
 
     private func copyRow(_ s: Suggestion) {
         let text = (s.meaningKo?.isEmpty == false) ? "\(s.term) — \(s.meaningKo!)" : s.term
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        // 감시자가 우리 복사에 반응(자기 조회)하지 않게 내부 쓰기로 감싼다
+        ClipboardWatcher.shared.performInternalWrite {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
     }
 
     // 빈 상태: 최근 검색 or 안내

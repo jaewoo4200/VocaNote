@@ -33,16 +33,22 @@ cp Resources/wordlist.txt Resources/abbreviations.json Resources/ktword.json "$A
 [ -f AppIcon.icns ] || (cd icon && ./make-icons.sh)
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
+# 릴리스 빌드 번호: 커밋 수 기반 단조 증가 (LaunchServices 가 stale 등록을 안 잡게)
+BUILD_NUM=$(git rev-list --count HEAD 2>/dev/null || date +%Y%m%d%H%M)
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$APP/Contents/Info.plist" 2>/dev/null || true
+echo "  빌드 번호: $BUILD_NUM"
+
 FW="-framework Cocoa -framework SwiftUI -framework Carbon -framework ServiceManagement -framework AVFoundation -framework ApplicationServices -framework Security"
-SLICES=""
+SLICES=""; BUILT=0
 for arch in arm64 x86_64; do
   if swiftc -swift-version 5 -O -target ${arch}-apple-macos14.0 -o "build/VocaNote-$arch" Sources/*.swift $FW 2>"build/err-$arch.log"; then
-    SLICES="$SLICES build/VocaNote-$arch"; echo "  ✓ $arch"
+    SLICES="$SLICES build/VocaNote-$arch"; BUILT=$((BUILT+1)); echo "  ✓ $arch"
   else
     echo "  ✗ $arch 실패 (build/err-$arch.log)"
   fi
 done
-[ -n "$SLICES" ] || { echo "빌드 실패"; exit 1; }
+# 릴리스는 반드시 유니버설 — 한 아키텍처라도 빠지면 실패 처리 (부분 성공 배포 금지)
+[ "$BUILT" -eq 2 ] || { echo "❌ 유니버설 빌드 실패 — 일부 아키텍처 누락:"; cat build/err-*.log 2>/dev/null | grep -iE "error" | head -5; exit 1; }
 lipo -create -output "$APP/Contents/MacOS/VocaNote" $SLICES
 echo "  아키텍처: $(lipo -info "$APP/Contents/MacOS/VocaNote" | sed 's/.*: //')"
 

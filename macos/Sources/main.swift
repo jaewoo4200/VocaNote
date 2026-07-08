@@ -102,8 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    @objc func openSettings() { SettingsWindow.shared.show() }
-    @objc func openWordbook() { WordbookWindow.shared.show() }
+    // 패널이 떠 있는 상태에서 열었을 때만, 닫을 때 패널로 복귀
+    @objc func openSettings() { SettingsWindow.shared.show(returnToPanel: panel.isVisible) }
+    @objc func openWordbook() { WordbookWindow.shared.show(returnToPanel: panel.isVisible) }
 
     // 선택 단어 조회 단축키 → 다른 앱의 선택 텍스트를 가져와 패널에 프리필
     @objc func lookupSelection() {
@@ -162,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         //    제대로 안 돌아 @Published 가 바뀌어도 뷰가 다시 안 그려짐(=결과 리스트 stale).
         //    NSHostingController 는 SwiftUI 라이프사이클/업데이트를 정상 구동한다.
         let hosting = NSHostingController(rootView: SearchView(vm: viewModel))
+        hosting.view.wantsLayer = true   // 등장 애니메이션용 레이어 백킹
         panel.contentViewController = hosting
         panel.setContentSize(NSSize(width: kPanelWidth, height: kPanelHeight))
     }
@@ -172,11 +174,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func present(word: String?) {
         viewModel.refreshRecents()
         centerPanel()
+        let wasVisible = panel.isVisible
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
+        if !wasVisible { animateAppear() }   // Spotlight/Raycast 감성의 스케일+페이드 등장
         NotificationCenter.default.post(name: .vocaFocus, object: word)
         SyncManager.shared.syncIfStale()   // 열 때 다른 기기 변경사항 받아오기(스로틀)
+    }
+
+    // 패널 등장 모션 — 살짝 작고 투명한 상태에서 스프링처럼 제자리로.
+    // (orderFront/포커스 로직은 불변; anchorPoint 를 건드리지 않고 중심 기준 행렬로 스케일)
+    private func animateAppear() {
+        guard let layer = panel.contentView?.layer else { return }
+        layer.removeAllAnimations()
+        let cx = layer.bounds.midX, cy = layer.bounds.midY
+        var from = CATransform3DMakeTranslation(cx, cy, 0)
+        from = CATransform3DScale(from, 0.965, 0.965, 1)
+        from = CATransform3DTranslate(from, -cx, -cy, 0)
+
+        let scale = CASpringAnimation(keyPath: "transform")
+        scale.fromValue = NSValue(caTransform3D: from)
+        scale.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        scale.damping = 22
+        scale.stiffness = 380
+        scale.initialVelocity = 4
+        scale.duration = scale.settlingDuration
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.0
+        fade.toValue = 1.0
+        fade.duration = 0.16
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+        layer.add(scale, forKey: "appear.scale")
+        layer.add(fade, forKey: "appear.fade")
     }
 
     func togglePanel() {

@@ -49,8 +49,16 @@ swiftc -swift-version 5 -O -target arm64-apple-macos14.0 \
   Sources/*.swift \
   -framework Cocoa -framework SwiftUI -framework Carbon -framework ServiceManagement -framework AVFoundation -framework ApplicationServices -framework Security
 
-# 로컬 실행용 ad-hoc 서명
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+# 서명: 키체인에 "VocaNote Dev" 자가서명 인증서가 있으면 그걸로 (재빌드해도
+# 손쉬운 사용(Accessibility) 권한이 유지됨 — ad-hoc 은 빌드마다 신원이 바뀌어 권한이 풀림).
+if security find-identity -p codesigning 2>/dev/null | grep -q "VocaNote Dev"; then
+  codesign --force --sign "VocaNote Dev" --identifier app.ljw.vocanote "$APP" >/dev/null 2>&1 \
+    && echo "  (VocaNote Dev 인증서로 서명 — Accessibility 권한 유지됨)"
+else
+  codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+  echo "  (ad-hoc 서명 — 재빌드 시 손쉬운 사용 권한이 풀립니다. 키체인 접근 > 인증서 지원 >"
+  echo "   인증서 생성 으로 'VocaNote Dev'(코드 서명) 인증서를 만들면 유지됩니다)"
+fi
 
 echo "✅ Built ./$APP"
 echo ""

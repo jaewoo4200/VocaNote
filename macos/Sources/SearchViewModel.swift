@@ -15,6 +15,7 @@ final class SearchViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(pinned, forKey: "panel.pinned") }
     }
     @Published var recents: [String] = RecentStore.shared.list()
+    @Published var justSavedTerm: String?      // 방금 저장한 단어 (행 모프 + 토스트 피드백)
 
     private var debounce: DispatchWorkItem?
     private var liveToken = 0
@@ -119,11 +120,19 @@ final class SearchViewModel: ObservableObject {
         return Array(out.prefix(12))
     }
 
+    private var savedFeedbackWork: DispatchWorkItem?
+
     func save(_ s: Suggestion) {
         guard let meaning = s.meaningKo, !meaning.isEmpty else { return }
         Wordbook.shared.upsert(term: s.term, meaningKo: meaning)
         RecentStore.shared.push(s.term)
         refreshRecents()
         results = buildLocal(query.trimmingCharacters(in: .whitespaces))
+        // 저장 피드백: 행 체크 모프 + 토스트를 1.4초 표시
+        justSavedTerm = s.term
+        savedFeedbackWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.justSavedTerm = nil }
+        savedFeedbackWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: work)
     }
 }

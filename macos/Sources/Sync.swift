@@ -9,6 +9,9 @@ import Combine
 // ============================================================================
 
 // MARK: - 웹 동기화 포맷 (src/types.ts)
+// ⚠️ 디코딩은 관대하게(decodeIfPresent): 웹 normalizeEntry 가 favorite 등 일부 필드를
+//    기본값 처리하지 않아 레거시/수동 레코드엔 키가 아예 없을 수 있음. 엄격 디코딩이면
+//    항목 하나 때문에 pull 전체가 실패해 동기화가 통째로 멈춘다.
 struct AbbrExpansion: Codable {
     var id: String
     var fullExpansion: String
@@ -19,6 +22,19 @@ struct AbbrExpansion: Codable {
     var favorite: Bool
     var updatedAt: Int
     var deletedAt: Int?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        fullExpansion = try c.decodeIfPresent(String.self, forKey: .fullExpansion) ?? ""
+        meaningKo = try c.decodeIfPresent(String.self, forKey: .meaningKo)
+        domains = try c.decodeIfPresent([String].self, forKey: .domains) ?? []
+        tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        favorite = try c.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
+        updatedAt = try c.decodeIfPresent(Int.self, forKey: .updatedAt) ?? 0
+        deletedAt = try c.decodeIfPresent(Int.self, forKey: .deletedAt)
+    }
 }
 
 struct VocabEntry: Codable {
@@ -35,6 +51,32 @@ struct VocabEntry: Codable {
     var createdAt: Int          // ms epoch
     var updatedAt: Int
     var deletedAt: Int?
+
+    init(stableKey: String, type: String, term: String, termNorm: String, meaningKo: String?,
+         tags: [String], notes: String, favorite: Bool, expansions: [AbbrExpansion],
+         priorityExpansionId: String?, createdAt: Int, updatedAt: Int, deletedAt: Int?) {
+        self.stableKey = stableKey; self.type = type; self.term = term; self.termNorm = termNorm
+        self.meaningKo = meaningKo; self.tags = tags; self.notes = notes; self.favorite = favorite
+        self.expansions = expansions; self.priorityExpansionId = priorityExpansionId
+        self.createdAt = createdAt; self.updatedAt = updatedAt; self.deletedAt = deletedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        stableKey = try c.decode(String.self, forKey: .stableKey)
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "word"
+        term = try c.decodeIfPresent(String.self, forKey: .term) ?? ""
+        termNorm = try c.decodeIfPresent(String.self, forKey: .termNorm) ?? ""
+        meaningKo = try c.decodeIfPresent(String.self, forKey: .meaningKo)
+        tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        favorite = try c.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
+        expansions = try c.decodeIfPresent([AbbrExpansion].self, forKey: .expansions) ?? []
+        priorityExpansionId = try c.decodeIfPresent(String.self, forKey: .priorityExpansionId)
+        createdAt = try c.decodeIfPresent(Int.self, forKey: .createdAt) ?? 0
+        updatedAt = try c.decodeIfPresent(Int.self, forKey: .updatedAt) ?? 0
+        deletedAt = try c.decodeIfPresent(Int.self, forKey: .deletedAt)
+    }
 }
 
 struct HistoryRecord: Codable {
@@ -49,6 +91,30 @@ struct BackupPayload: Codable {
     var exportedAt: String
     var entries: [VocabEntry]
     var history: [HistoryRecord]
+
+    init(schemaVersion: Int, exportedAt: String, entries: [VocabEntry], history: [HistoryRecord]) {
+        self.schemaVersion = schemaVersion; self.exportedAt = exportedAt
+        self.entries = entries; self.history = history
+    }
+
+    // 항상 성공하며 언키드 컨테이너 인덱스만 전진시키는 스킵용 타입
+    private struct Discard: Decodable { init(from decoder: Decoder) throws {} }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        exportedAt = try c.decodeIfPresent(String.self, forKey: .exportedAt) ?? ""
+        history = (try? c.decodeIfPresent([HistoryRecord].self, forKey: .history)) ?? []
+        // entries 는 lossy 디코딩: 깨진 레코드 하나가 pull 전체를 실패시키지 않게 건너뜀
+        var out: [VocabEntry] = []
+        if var arr = try? c.nestedUnkeyedContainer(forKey: .entries) {
+            while !arr.isAtEnd {
+                if let e = try? arr.decode(VocabEntry.self) { out.append(e) }
+                else { _ = try? arr.decode(Discard.self) }
+            }
+        }
+        entries = out
+    }
 }
 
 private struct VaultUpsert: Codable { var owner_id: String; var payload: BackupPayload }
@@ -174,8 +240,30 @@ final class SyncManager: ObservableObject {
         Task { await syncNow() }
     }
 
+    // 단일 실행(single-flight) 보장: 동시에 여러 곳(패널 열기 · 디바운스 · 수동 버튼)에서
+    // 불려도 한 번만 돈다. 겹친 요청은 pendingRerun 으로 합쳐져 끝난 뒤 1회 재실행.
+    // (동시 실행 시 refresh 토큰이 이중 회전되어 세션이 깨질 수 있음 — Supabase는 rotation)
+    private var syncInFlight = false
+    private var pendingRerun = false
+
     func syncNow() async {
         guard isConfigured, session != nil else { return }
+        let acquired = await MainActor.run { () -> Bool in
+            if syncInFlight { pendingRerun = true; return false }
+            syncInFlight = true
+            return true
+        }
+        guard acquired else { return }
+        repeat {
+            await performSync()
+        } while await MainActor.run(body: { () -> Bool in
+            if pendingRerun { pendingRerun = false; return true }
+            syncInFlight = false
+            return false
+        })
+    }
+
+    private func performSync() async {
         lastSyncStarted = Date()
         publish { self.syncing = true; self.status = "동기화 중…" }
         do {

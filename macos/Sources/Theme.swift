@@ -33,3 +33,17 @@ enum VocaTheme {
     static let rMd: CGFloat = 10
     static let rLg: CGFloat = 14
 }
+
+extension View {
+    /// 패널/창 배경 — 뒤에 무엇이 오든(밝은/어두운 배경, 다크모드) 글자 대비를 보장.
+    /// 반투명 재질 위에 **불투명 테마 서피스(85%)**를 얹어, 뒤 배경 색이 대비를 망치지 못하게 한다.
+    /// (예전 .ultraThinMaterial 단독은 어두운 배경이 비쳐 밝은 모드에서 검은 글자가 안 보였음)
+    func vocaSurfaceBackground() -> some View {
+        background(
+            ZStack {
+                Rectangle().fill(.regularMaterial)
+                Rectangle().fill(VocaTheme.surface.opacity(0.85))
+            }
+        )
+    }
+}

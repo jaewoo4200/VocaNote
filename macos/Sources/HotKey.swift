@@ -82,6 +82,13 @@ final class HotKeyManager {
                 return nil
             }
             guard hasReal else { return nil }  // ⌘/⌥/⌃ 없으면 계속 녹화
+            // 다른 쪽 단축키와 동일한 조합은 거부(둘 다 같으면 한쪽이 조용히 죽음) — 삑 소리 후 계속 녹화
+            let otherKey = target == .lookup ? self.keyCode : self.lookupKeyCode
+            let otherMod = target == .lookup ? self.carbonMods : self.lookupMods
+            if UInt32(event.keyCode) == otherKey && carbon == otherMod {
+                NSSound.beep()
+                return nil
+            }
             let disp = HotKeyManager.displayString(keyCode: UInt32(event.keyCode), carbonMods: carbon,
                                                    chars: event.charactersIgnoringModifiers)
             let keys: (String, String, String) = target == .lookup

@@ -74,6 +74,7 @@ import {
 } from './lib/supabaseSync';
 import type {
   AppSettings,
+  BackupPayload,
   EntryType,
   PanelKey,
   ReviewItem,
@@ -236,6 +237,7 @@ function App(): JSX.Element {
   const lookupRequestSeqRef = useRef(0);
   const autoSyncSkipRef = useRef(false);
   const autoSyncTimerRef = useRef<number | null>(null);
+  const syncInFlightRef = useRef(false);
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [entries, setEntries] = useState<VocabEntry[]>([]);
   const [history, setHistory] = useState<Awaited<ReturnType<typeof getHistory>>>([]);
@@ -1267,8 +1269,20 @@ function App(): JSX.Element {
 
   const syncWithSupabase = useCallback(
     async (session: SupabaseSession) => {
+      // 순서가 중요: 느린 네트워크 읽기(원격)를 먼저 끝낸 "뒤" 로컬을 스냅샷한다.
+      // (스냅샷→네트워크→복원 순서면 네트워크 동안 저장한 단어가 복원 단계에서 지워짐)
+      const remoteRaw = await readSupabaseBackup(supabaseConfig, session);
+      // 원격 페이로드 검증 — 손상/구버전 vault 로 로컬 DB를 clear+덮어쓰는 사고 방지.
+      // 유효하지 않으면 동기화를 중단(로컬/원격 모두 보존)하고 에러로 알린다.
+      let remote: BackupPayload | null = null;
+      if (remoteRaw) {
+        try {
+          remote = validateBackupPayload(remoteRaw);
+        } catch (error) {
+          throw new Error(`원격 백업이 손상되어 동기화를 중단했습니다 (데이터는 안전합니다): ${toErrorMessage(error)}`);
+        }
+      }
       const local = await exportBackupPayload();
-      const remote = await readSupabaseBackup(supabaseConfig, session);
       const merged = remote ? mergeBackup(local, remote) : local;
       await restoreBackupPayload(merged);
       await upsertSupabaseBackup(supabaseConfig, session, merged);
@@ -1285,6 +1299,12 @@ function App(): JSX.Element {
       setStatusMessage('Sync 모드가 Local only 입니다.');
       return;
     }
+    // 재진입 가드: 자동(타이머)·포커스·수동 버튼이 겹쳐도 한 번만 돈다
+    // (동시 실행 시 stale 스냅샷 복원으로 편집 유실 + refresh 토큰 경쟁 위험)
+    if (syncInFlightRef.current) {
+      return;
+    }
+    syncInFlightRef.current = true;
 
     setSyncBusy(true);
     setSyncMessage(settings.sync.mode === 'supabase' ? 'Supabase 동기화 중...' : '동기화 중...');
@@ -1302,8 +1322,9 @@ function App(): JSX.Element {
         return;
       }
 
-      const local = await exportBackupPayload();
+      // 네트워크 읽기를 먼저 끝낸 뒤 로컬 스냅샷 (네트워크 동안의 편집 유실 방지)
       const remote = await readGistBackup(syncToken.trim(), settings.sync.gistId.trim());
+      const local = await exportBackupPayload();
       const merged = mergeBackup(local, remote);
       await restoreBackupPayload(merged);
       await updateGistBackup(syncToken.trim(), settings.sync.gistId.trim(), merged);
@@ -1314,6 +1335,7 @@ function App(): JSX.Element {
     } catch (error) {
       setSyncMessage(`Sync 실패: ${toErrorMessage(error)}`);
     } finally {
+      syncInFlightRef.current = false;
       setSyncBusy(false);
     }
   }, [
@@ -1982,7 +2004,7 @@ function App(): JSX.Element {
               type="button"
               key={result.entry.stableKey}
               onClick={() => setSelectedStableKey(result.entry.stableKey)}
-              className="surface w-full rounded-xl p-3 text-left transition hover:border-[color:var(--brand)]"
+              className="surface card-hover w-full rounded-xl p-3 text-left"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -2028,7 +2050,7 @@ function App(): JSX.Element {
             setQuery(item.term);
             searchRef.current?.focus();
           }}
-          className="surface flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:border-[color:var(--brand)]"
+          className="surface card-hover flex w-full items-center justify-between rounded-lg px-3 py-2 text-left"
         >
           <div>
             <p className="text-sm">{item.term}</p>
@@ -2044,8 +2066,27 @@ function App(): JSX.Element {
     </section>
   );
 
-  const renderWordbookPanel = () => (
+  const renderWordbookPanel = () => {
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    const wbStats = [
+      { label: '전체 단어', value: wordEntries.length },
+      { label: '이번 주', value: wordEntries.filter((entry) => entry.createdAt >= weekAgo).length, plus: true },
+      { label: '즐겨찾기', value: wordEntries.filter((entry) => entry.favorite).length },
+      { label: '미정의', value: wordEntries.filter((entry) => !hasMeaning(entry)).length }
+    ];
+    return (
     <section className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        {wbStats.map((s) => (
+          <div key={s.label} className="surface rounded-xl px-3 py-2.5">
+            <p className="text-lg font-bold tabular-nums text-[color:var(--brand)]">
+              {s.plus ? `+${s.value}` : s.value}
+            </p>
+            <p className="text-xs text-[color:var(--text-muted)]">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
       <div className="surface rounded-xl p-3">
         <p className="text-xs font-medium text-[color:var(--text-muted)]">단어 직접 추가</p>
         <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
@@ -2124,7 +2165,7 @@ function App(): JSX.Element {
             type="button"
             key={entry.stableKey}
             onClick={() => setSelectedStableKey(entry.stableKey)}
-            className="surface w-full rounded-xl p-3 text-left hover:border-[color:var(--brand)]"
+            className="surface card-hover w-full rounded-xl p-3 text-left"
           >
             <div className="flex items-start justify-between">
               <p className="text-sm font-semibold">{entry.term}</p>
@@ -2146,7 +2187,8 @@ function App(): JSX.Element {
         ))}
       </div>
     </section>
-  );
+    );
+  };
 
   const renderAbbrevPanel = () => (
     <section className="space-y-3">
@@ -3245,6 +3287,20 @@ function App(): JSX.Element {
                       : '사전을 불러오는 중...'}
                   </p>
                 ) : null}
+                {autocompleteSuggestions.length > 0 ? (
+                  <div className="mt-1 flex items-center gap-3 border-t border-[color:var(--border)] px-3 pb-1 pt-2 text-xs text-[color:var(--text-muted)]">
+                    <span className="flex items-center gap-1">
+                      <kbd className="kbd">↑</kbd>
+                      <kbd className="kbd">↓</kbd> 이동
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <kbd className="kbd">↵</kbd> 선택
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <kbd className="kbd">esc</kbd> 닫기
+                    </span>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -3340,7 +3396,12 @@ function App(): JSX.Element {
 
         <main className="surface min-h-[70vh] flex-1 rounded-2xl p-4 lg:p-5">
           {loading ? (
-            <div className="text-sm text-[color:var(--text-muted)]">로컬 데이터 로딩 중...</div>
+            <div className="space-y-3" aria-label="로컬 데이터 로딩 중">
+              <div className="skeleton h-6 w-28" />
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="skeleton h-16 w-full" style={{ opacity: 1 - i * 0.18 }} />
+              ))}
+            </div>
           ) : (
             renderMainPanel()
           )}
@@ -3578,8 +3639,9 @@ function App(): JSX.Element {
         <div
           role="status"
           aria-live="polite"
-          className="surface popover fixed left-1/2 top-20 z-50 -translate-x-1/2 rounded-xl px-4 py-2 text-sm"
+          className="surface toast fixed left-1/2 top-20 z-50 flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm"
         >
+          <span aria-hidden className="text-[color:var(--brand)]">✓</span>
           {statusMessage}
         </div>
       ) : null}

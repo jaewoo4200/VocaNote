@@ -53,19 +53,34 @@ enum SelectionLookup {
         _ = AXIsProcessTrustedWithOptions([opt: true] as CFDictionary)
     }
 
-    /// 선택 영역을 복사해 첫 단어를 반환. 원래 클립보드는 복원.
+    /// 선택 영역을 복사해 첫 단어를 반환. 원래 클립보드는 **모든 형식(이미지/파일/RTF 포함)** 복원.
     static func grab(_ completion: @escaping (String?) -> Void) {
         let pb = NSPasteboard.general
-        let saved = pb.string(forType: .string)
+        // 전 형식 딥카피 — clearContents() 후엔 원본 NSPasteboardItem 재사용 불가
+        let savedItems: [[NSPasteboard.PasteboardType: Data]] = (pb.pasteboardItems ?? []).map { item in
+            var dict: [NSPasteboard.PasteboardType: Data] = [:]
+            for type in item.types { if let d = item.data(forType: type) { dict[type] = d } }
+            return dict
+        }
+        let savedString = pb.string(forType: .string)
         let beforeCount = pb.changeCount
+        ClipboardWatcher.shared.beginInternalWrite()   // 감시자가 우리 복사/복원에 반응하지 않게
         simulateCopy()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-            let copied = (pb.changeCount != beforeCount) ? pb.string(forType: .string) : saved
-            // 원래 클립보드 복원 (선택 복사가 실제로 일어났을 때만)
-            if pb.changeCount != beforeCount {
+            let didCopy = pb.changeCount != beforeCount
+            let copied = didCopy ? pb.string(forType: .string) : savedString
+            if didCopy {
                 pb.clearContents()
-                if let s = saved { pb.setString(s, forType: .string) }
+                if !savedItems.isEmpty {
+                    let restored = savedItems.map { dict -> NSPasteboardItem in
+                        let it = NSPasteboardItem()
+                        for (type, data) in dict { it.setData(data, forType: type) }
+                        return it
+                    }
+                    pb.writeObjects(restored)
+                }
             }
+            ClipboardWatcher.shared.endInternalWrite()
             completion(firstWord(copied))
         }
     }
@@ -94,7 +109,19 @@ final class ClipboardWatcher {
     static let shared = ClipboardWatcher()
     private var timer: Timer?
     private var lastCount = NSPasteboard.general.changeCount
+    private var internalWriteDepth = 0     // 앱 자신의 클립보드 조작 중엔 감시 중단
     var onWord: ((String) -> Void)?
+
+    /// 앱이 클립보드를 만질 때(선택조회 ⌘C 시뮬레이션/복원, 뜻 복사) 감싸서 호출 —
+    /// 자기 쓰기에 반응해 이중 조회/깜빡임이 생기는 것을 막는다.
+    func beginInternalWrite() { internalWriteDepth += 1 }
+    func endInternalWrite() {
+        internalWriteDepth = max(0, internalWriteDepth - 1)
+        if internalWriteDepth == 0 { lastCount = NSPasteboard.general.changeCount }
+    }
+    func performInternalWrite(_ block: () -> Void) {
+        beginInternalWrite(); block(); endInternalWrite()
+    }
 
     private let defaultsKey = "clipboard.watch"
     var enabled: Bool {
@@ -115,6 +142,7 @@ final class ClipboardWatcher {
     private func stop() { timer?.invalidate(); timer = nil }
 
     private func tick() {
+        guard internalWriteDepth == 0 else { return }   // 앱 자신의 쓰기 진행 중엔 무시
         let pb = NSPasteboard.general
         guard pb.changeCount != lastCount else { return }
         lastCount = pb.changeCount

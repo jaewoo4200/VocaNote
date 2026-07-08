@@ -7,16 +7,20 @@ extension Notification.Name { static let vocaReturnToPanel = Notification.Name("
 final class SettingsWindow {
     static let shared = SettingsWindow()
     private var window: NSWindow?
+    private var returnToPanel = false   // 검색 패널에서 열었을 때만 닫을 때 패널 복귀
 
-    func show() {
+    func show(returnToPanel: Bool = false) {
+        self.returnToPanel = returnToPanel
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 470, height: 600),
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 470, height: 620),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
             w.title = "VocaNote 설정"
             w.isReleasedWhenClosed = false
             w.center()
             w.contentView = NSHostingView(rootView: SettingsView())
-            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { _ in
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+                guard let self = self, self.returnToPanel else { return }
+                self.returnToPanel = false
                 NotificationCenter.default.post(name: .vocaReturnToPanel, object: nil)
             }
             window = w
@@ -41,36 +45,53 @@ struct SettingsView: View {
     @State private var authError = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("설정").font(.title2).bold()
+        VStack(alignment: .leading, spacing: 14) {
+            Text("설정").font(.title2).bold().tracking(-0.3)
 
-            hotkeyRow(title: "검색 패널", value: hotkey, target: .panel)
-            hotkeyRow(title: "선택 단어 조회", value: lookupHotkey, target: .lookup)
-            Text("‘선택 단어 조회’는 다른 앱(PDF·브라우저)에서 단어를 드래그한 뒤 단축키를 누르면 바로 뜻을 띄웁니다. 최초 1회 손쉬운 사용(Accessibility) 권한 허용이 필요해요.")
-                .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+            section("단축키", icon: "keyboard") {
+                hotkeyRow(title: "검색 패널", value: hotkey, target: .panel)
+                hotkeyRow(title: "선택 단어 조회", value: lookupHotkey, target: .lookup)
+                Text("‘선택 단어 조회’는 다른 앱(PDF·브라우저)에서 단어를 드래그한 뒤 단축키를 누르면 바로 뜻을 띄웁니다. 최초 1회 손쉬운 사용(Accessibility) 권한이 필요해요.")
+                    .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
 
-            Divider()
-
-            Toggle("복사한 단어 자동 조회 (클립보드 감시)", isOn: $clipboardWatch)
-                .onChange(of: clipboardWatch) { _, on in ClipboardWatcher.shared.enabled = on }
-            Toggle("로그인 시 자동 실행", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { _, on in SettingsView.setLogin(on) }
-            HStack {
+            section("일반", icon: "slider.horizontal.3") {
+                Toggle("복사한 단어 자동 조회 (클립보드 감시)", isOn: $clipboardWatch)
+                    .onChange(of: clipboardWatch) { _, on in ClipboardWatcher.shared.enabled = on }
+                Toggle("로그인 시 자동 실행", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, on in SettingsView.setLogin(on) }
                 Button("사용법 다시 보기") {
                     NotificationCenter.default.post(name: .vocaShowTutorial, object: nil)
                 }.font(.caption)
-                Spacer()
             }
 
-            Divider()
-            syncSection
+            section("동기화", icon: "arrow.triangle.2.circlepath") {
+                syncSection
+            }
 
             Spacer()
             Text("VocaNote \(Self.appVersion) · Jaewoo Lee")
                 .font(.caption2).foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(24)
-        .frame(width: 470, height: 600)
+        .padding(20)
+        .frame(width: 470, height: 620)
+    }
+
+    // 인셋 카드 섹션 — 시스템 설정/Linear 스타일의 그룹핑
+    @ViewBuilder
+    private func section<C: View>(_ title: String, icon: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 11, weight: .semibold)).foregroundColor(.vocaBrand)
+                Text(title).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.secondary)
+            }
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: VocaTheme.rMd).fill(Color.primary.opacity(0.035)))
+        .overlay(RoundedRectangle(cornerRadius: VocaTheme.rMd).strokeBorder(VocaTheme.border.opacity(0.6)))
     }
 
     static var appVersion: String {
@@ -80,11 +101,8 @@ struct SettingsView: View {
 
     @ViewBuilder private var syncSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(.vocaBrand)
-                Text("동기화").font(.headline)
-                Text("voca.ljw.app").font(.caption).foregroundColor(.secondary)
-            }
+            Text("voca.ljw.app · 웹/폰과 같은 계정으로 단어장 자동 동기화")
+                .font(.caption).foregroundColor(.secondary)
 
             if !sync.isConfigured {
                 Text("이 빌드에 Supabase 설정이 없습니다. (.env.local 확인)")

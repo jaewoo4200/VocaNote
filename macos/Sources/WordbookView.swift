@@ -7,8 +7,10 @@ import SwiftUI
 final class WordbookWindow {
     static let shared = WordbookWindow()
     private var window: NSWindow?
+    private var returnToPanel = false   // 검색 패널에서 열었을 때만 닫을 때 패널 복귀
 
-    func show() {
+    func show(returnToPanel: Bool = false) {
+        self.returnToPanel = returnToPanel
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
                              styleMask: [.titled, .closable, .resizable],
@@ -17,7 +19,9 @@ final class WordbookWindow {
             w.isReleasedWhenClosed = false
             w.center()
             w.contentView = NSHostingView(rootView: WordbookView())
-            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { _ in
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+                guard let self = self, self.returnToPanel else { return }
+                self.returnToPanel = false
                 NotificationCenter.default.post(name: .vocaReturnToPanel, object: nil)
             }
             window = w
@@ -53,7 +57,7 @@ struct WordbookView: View {
             }
         }
         .frame(minWidth: 480, minHeight: 460)
-        .background(.ultraThinMaterial)
+        .vocaSurfaceBackground()
         .onReceive(NotificationCenter.default.publisher(for: .vocaWordbookChanged)) { _ in
             entries = Wordbook.shared.activeEntries   // 동기화 후 자동 새로고침
         }
@@ -63,12 +67,7 @@ struct WordbookView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "character.book.closed.fill").foregroundColor(.vocaBrand)
-                Text("내 단어장").font(.system(size: 18, weight: .bold))
-                Text("\(entries.count)")
-                    .font(.system(size: 12, weight: .semibold))
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Color.vocaBrand.opacity(0.14))
-                    .foregroundColor(.vocaBrand).clipShape(Capsule())
+                Text("내 단어장").font(.system(size: 18, weight: .bold)).tracking(-0.3)
                 Spacer()
                 Button { startAdd() } label: { Label("추가", systemImage: "plus") }
                 Button { reviewing = true } label: {
@@ -76,7 +75,9 @@ struct WordbookView: View {
                 }
                 .disabled(entries.isEmpty)
             }
-            .padding(.horizontal, 18).padding(.vertical, 14)
+            .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 10)
+
+            statsBar
 
             if showAdd { addForm }
 
@@ -104,6 +105,33 @@ struct WordbookView: View {
                 }
             }
         }
+    }
+
+    // 통계 스트립: 전체 · 이번 주 · 오늘 (WordEntry 의 createdAt 만으로 계산)
+    private var statsBar: some View {
+        let now = Date()
+        let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
+        let dayStart = Calendar.current.startOfDay(for: now)
+        let week = entries.filter { $0.createdAt >= weekAgo }.count
+        let today = entries.filter { $0.createdAt >= dayStart }.count
+        return HStack(spacing: 10) {
+            stat("\(entries.count)", "전체 단어")
+            stat("+\(week)", "이번 주")
+            stat("+\(today)", "오늘")
+        }
+        .padding(.horizontal, 18).padding(.bottom, 12)
+    }
+
+    private func stat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundColor(.vocaBrand)
+            Text(label).font(.system(size: 10.5)).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.vocaBrand.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.vocaBrand.opacity(0.12)))
     }
 
     // 직접 단어+뜻 추가 / 기존 뜻 수정 폼
@@ -165,16 +193,16 @@ struct WordbookView: View {
             Spacer(minLength: 8)
             Button { Speaker.shared.speak(e.term) } label: {
                 Image(systemName: "speaker.wave.2.fill").font(.system(size: 13)).foregroundColor(.secondary)
-            }.buttonStyle(.plain).help("발음")
+            }.buttonStyle(HoverIconStyle()).help("발음")
             Button { startEdit(e) } label: {
                 Image(systemName: "square.and.pencil").font(.system(size: 13)).foregroundColor(.secondary)
-            }.buttonStyle(.plain).help("뜻 수정")
+            }.buttonStyle(HoverIconStyle()).help("뜻 수정")
             Button {
                 Wordbook.shared.remove(termNorm: e.termNorm)
                 entries = Wordbook.shared.activeEntries
             } label: {
                 Image(systemName: "trash").font(.system(size: 13)).foregroundColor(.red.opacity(0.8))
-            }.buttonStyle(.plain).help("삭제")
+            }.buttonStyle(HoverIconStyle()).help("삭제")
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
@@ -201,50 +229,96 @@ struct FlashcardView: View {
         VStack(spacing: 0) {
             HStack {
                 Button { onClose() } label: { Label("목록", systemImage: "chevron.left") }
-                    .buttonStyle(.plain).foregroundColor(.vocaBrand)
+                    .buttonStyle(HoverIconStyle()).foregroundColor(.vocaBrand)
                 Spacer()
                 Text(order.isEmpty ? "" : "\(pos + 1) / \(order.count)")
-                    .font(.system(size: 12)).foregroundColor(.secondary)
+                    .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundColor(.secondary)
                 Spacer()
-                Button { shuffle() } label: { Image(systemName: "shuffle") }.buttonStyle(.plain)
+                Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { shuffle() } } label: {
+                    Image(systemName: "shuffle")
+                }.buttonStyle(HoverIconStyle()).help("섞기")
             }
-            .padding(.horizontal, 18).padding(.vertical, 14)
+            .padding(.horizontal, 18).padding(.vertical, 12)
+
+            // 진행 바 — 카드 넘길 때마다 스프링으로 채워짐
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.vocaBrand.opacity(0.12))
+                    Capsule().fill(Color.vocaBrand)
+                        .frame(width: order.isEmpty ? 0 : g.size.width * CGFloat(min(pos, order.count)) / CGFloat(order.count))
+                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: pos)
+                }
+            }
+            .frame(height: 4)
+            .padding(.horizontal, 18).padding(.bottom, 10)
             Divider()
 
             if let e = current {
                 VStack(spacing: 18) {
                     Spacer()
-                    HStack(spacing: 10) {
-                        Text(e.term).font(.system(size: 34, weight: .bold))
-                        Button { Speaker.shared.speak(e.term) } label: {
-                            Image(systemName: "speaker.wave.2.fill").font(.system(size: 18))
-                                .foregroundColor(.secondary)
-                        }.buttonStyle(.plain)
+                    // 카드 서피스
+                    VStack(spacing: 16) {
+                        HStack(spacing: 10) {
+                            Text(e.term).font(.system(size: 34, weight: .bold)).tracking(-0.4)
+                            Button { Speaker.shared.speak(e.term) } label: {
+                                Image(systemName: "speaker.wave.2.fill").font(.system(size: 18))
+                                    .foregroundColor(.secondary)
+                            }.buttonStyle(HoverIconStyle())
+                        }
+                        ZStack {
+                            if revealed {
+                                Text(e.meaningKo).font(.system(size: 18, weight: .medium)).foregroundColor(.vocaBrand)
+                                    .multilineTextAlignment(.center).padding(.horizontal, 24)
+                                    .transition(.asymmetric(
+                                        insertion: .opacity.combined(with: .offset(y: 6)).combined(with: .scale(scale: 0.97)),
+                                        removal: .opacity))
+                            } else {
+                                Button {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { revealed = true }
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text("뜻 보기").font(.system(size: 14, weight: .medium))
+                                        KeyCap(text: "space")
+                                    }
+                                    .padding(.horizontal, 16).padding(.vertical, 8)
+                                    .background(Color.vocaBrand.opacity(0.12))
+                                    .foregroundColor(.vocaBrand).clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .keyboardShortcut(.space, modifiers: [])
+                            }
+                        }
+                        .frame(minHeight: 56)
                     }
-                    if revealed {
-                        Text(e.meaningKo).font(.system(size: 18)).foregroundColor(.vocaBrand)
-                            .multilineTextAlignment(.center).padding(.horizontal, 24)
-                    } else {
-                        Button { withAnimation { revealed = true } } label: {
-                            Text("뜻 보기").font(.system(size: 14, weight: .medium))
-                                .padding(.horizontal, 18).padding(.vertical, 8)
-                                .background(Color.vocaBrand.opacity(0.12))
-                                .foregroundColor(.vocaBrand).clipShape(Capsule())
-                        }.buttonStyle(.plain)
-                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 36).padding(.horizontal, 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: VocaTheme.rLg)
+                            .fill(VocaTheme.surface.opacity(0.6))
+                            .shadow(color: .black.opacity(0.07), radius: 14, y: 5)
+                    )
+                    .overlay(RoundedRectangle(cornerRadius: VocaTheme.rLg).strokeBorder(VocaTheme.border))
+                    .padding(.horizontal, 24)
+                    .id(pos)   // 카드 전환 시 뷰 교체 → 트랜지션
+                    .transition(.asymmetric(insertion: .offset(x: 26).combined(with: .opacity),
+                                            removal: .offset(x: -26).combined(with: .opacity)))
                     Spacer()
                     HStack(spacing: 12) {
                         Button { advance(gotIt: false) } label: {
-                            Text("다시 볼래요").frame(maxWidth: .infinity)
+                            HStack(spacing: 6) { Text("다시 볼래요"); KeyCap(text: "1") }.frame(maxWidth: .infinity)
                         }
+                        .keyboardShortcut("1", modifiers: [])
                         Button { advance(gotIt: true) } label: {
-                            Text("알아요").frame(maxWidth: .infinity)
-                        }.tint(.vocaBrand)
+                            HStack(spacing: 6) { Text("알아요"); KeyCap(text: "2") }.frame(maxWidth: .infinity)
+                        }
+                        .tint(.vocaBrand)
+                        .keyboardShortcut("2", modifiers: [])
                     }
                     .controlSize(.large)
                     .padding(.horizontal, 24).padding(.bottom, 20)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: pos)
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "checkmark.seal.fill").font(.system(size: 40)).foregroundColor(.vocaBrand)

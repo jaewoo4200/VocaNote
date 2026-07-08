@@ -63,11 +63,15 @@ function normalizeEntry(entry: VocabEntry): VocabEntry {
     ...entry,
     tags: entry.tags ?? [],
     notes: entry.notes ?? '',
+    // favorite 도 기본값 처리 — 없으면 JSON.stringify 가 키를 생략해 네이티브(macOS)
+    // 클라이언트의 디코딩이 깨질 수 있다(레거시/복원 레코드 방어).
+    favorite: entry.favorite ?? false,
     expansions: (entry.expansions ?? []).map((expansion) => ({
       ...expansion,
       domains: expansion.domains ?? [],
       tags: expansion.tags ?? [],
-      notes: expansion.notes ?? ''
+      notes: expansion.notes ?? '',
+      favorite: expansion.favorite ?? false
     }))
   };
 }
